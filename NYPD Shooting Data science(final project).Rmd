@@ -1,0 +1,114 @@
+---
+title: "NYPD Shooting"
+author: "Esmat"
+date: "2023-11-09"
+output: pdf_document
+---
+
+Import, tidy and analyze the **NYPD Shooting** Incident data set obtained. Be sure your project is reproducible and contains some visualization and analysis. You may use the data to do any analysis that is of interest to you. You should include at least two visualizations and one model. Be sure to identify any bias possible in the data and in your analysis.
+
+## Import Libraries
+
+Begin by importing the necessary libraries to access the relevant functions:
+
+```{r import_libraries}
+library("formatR")
+library("tidyverse")
+library("lubridate")
+library("reticulate")
+```
+
+## Import Data
+
+```{r import_data}
+url_in <- 'https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD'
+
+data <- read.csv(url_in)
+```
+
+
+
+## Tidy Data
+
+To tidy the data:
+
+1.  The "OCCUR_DATE" variable column is not a time object so a new column must be mutated in and called "DATE" which will convert "OCCUR_DATE" chr objects to time objects.
+
+2.  I will group the incidents by BORO.
+
+3.  In order to obtain meaningful summary statistics, the "OCCUR_TIME" column must be converted from a chr object to a numeric object so that, for example,"07:30" becomes "7.5".
+
+4.  The irrelevant columns must be removed and the data must be sorted (arranged) by a column that presents the data into a sensible way such as a time variable.
+
+5.  the TIME column will need to be adjusted by 12 hours to account for most incidences occurring during the night which will represent the data in a truer form for modelling purposes.
+
+```{r tidy_data, tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+
+data <- data %>%
+    mutate(DATE = mdy(OCCUR_DATE)) %>%
+    mutate(TIME = str_remove(OCCUR_TIME, "1970-01-01 ")) %>%
+    mutate(TIME = sapply(strsplit(TIME,":"),
+              function(x) {x <- as.numeric(x)
+                            x[1]+x[2]/60}))%>%
+    group_by(BORO) %>%
+    select(-c(INCIDENT_KEY, PRECINCT, OCCUR_TIME, OCCUR_DATE, JURISDICTION_CODE, LOCATION_DESC,PERP_SEX, PERP_RACE, VIC_SEX, VIC_RACE, PERP_AGE_GROUP, VIC_AGE_GROUP, X_COORD_CD, Y_COORD_CD, Latitude, Longitude, STATISTICAL_MURDER_FLAG)) %>%
+    arrange(DATE)%>%
+    select(DATE, everything())
+
+data <- data %>%
+    mutate(ADJUSTEDTIME = sapply(TIME, function(x) ifelse(x >= 12, x-12, x + 12)))
+```
+
+## Summary of Data
+
+The summary indicates that 25,596 total reported shooting incidents occurred within the New York City jurisdiction between January 1, 2006 and December 31, 2021. The summary statistics for the TIME variable indicates that an equal amount of incidents occurred between the time interval of 8:45PM to 3:35 AM (a 5 hour and 50 minutes window) and the time interval of 3:35 AM to 8:45 PM (an 18 hours and 10 minutes window)\--indicating that shooting incidences are much more concentrated at night than in the morning.
+
+```{r}
+summary(data)
+```
+
+## Visualization of Data
+
+The best visual tool is a variation of a scatter-plot that graphs the incidents by date and time. The most dangerous dates and times will have a cluster of incidents, while the safest dates and times will have a void of incidents. The scatter-plot can be visualized with (1) color gradient point plots and (2) contour maps.
+
+```{r visualize_data}
+data_visualization <- data %>%
+      ggplot(aes(x=DATE, y=ADJUSTEDTIME) ) +
+      geom_hex(bins = 70) +
+      scale_fill_continuous(type = "viridis") +
+      theme_bw()
+
+
+data_visualization2 <- data %>%
+      ggplot(aes(x=DATE, y=ADJUSTEDTIME) ) +
+      stat_density_2d(aes(fill = ..level..), geom = "polygon", colour="white")
+
+data_visualization3 <- data %>%
+      ggplot(aes(x=DATE, y=ADJUSTEDTIME) ) +
+      geom_density_2d()
+
+plot(data_visualization)
+plot(data_visualization2)
+plot(data_visualization3)
+```
+
+## Model Data
+
+Like the line plot, a linear regression model will be able to show the hours that are most likely to have shooting incidents occur. This regression along with the other visualization will give the policing force a confluence of supporting evidence to providing extra policing power during the late night hours.
+
+```{r linear_model}
+
+#linear model
+linear_model <- ggplot(data, aes(x=DATE, y=ADJUSTEDTIME)) + 
+                  geom_point()+
+                  geom_smooth(method=lm)+
+                  labs(y = "Time shifted by 12 hours")
+linear_model
+
+```
+
+## Analysis
+The statistical summary, line plot, and linear regression model consistently point to midnight and the surrounding hours as the period with the highest likelihood of shooting incidents. Conversely, the hours between 7am and 11am consistently emerge as the least likely time for such incidents. This convergence across different analyses strengthens the reliability of these findings regarding the temporal patterns of shooting occurrences.
+
+Both the color gradient scatter plot and contour maps reveal a concentration of incidents during the hours between 8pm and 3am, with a noticeable dip between 7am and 11am. Additionally, the contour maps indicate higher incident levels during the periods of 2007-2010 and 2020-2021, compared to the years 2006 and 2011-2019. A plausible hypothesis for these peaks in crime could be linked to the economic and social turbulence experienced during those times, such as the late 2000s financial recession and the onset of the COVID-19 pandemic in 2020.
+
